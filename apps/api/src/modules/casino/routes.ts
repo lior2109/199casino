@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, getUser } from '../../middleware/auth.js';
 
 const gamesQuerySchema = z.object({
   search: z.string().optional(),
@@ -75,7 +75,8 @@ export async function casinoRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/games/sync', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'admin' && request.user.role !== 'superadmin') {
+    const user = getUser(request);
+    if (user.role !== 'admin' && user.role !== 'superadmin') {
       return reply.status(403).send({ error: 'Admin access required' });
     }
 
@@ -88,7 +89,7 @@ export async function casinoRoutes(fastify: FastifyInstance) {
       });
 
       if (!response.ok) {
-        fastify.log.error(`Game sync failed: ${response.status}`);
+        fastify.log.error('Game sync failed: %d', response.status);
         return reply.status(502).send({ error: 'Failed to fetch games from provider' });
       }
 
@@ -118,7 +119,7 @@ export async function casinoRoutes(fastify: FastifyInstance) {
 
       return reply.send({ message: `Synced ${synced} games` });
     } catch (error) {
-      fastify.log.error('Game sync error:', error);
+      fastify.log.error({ err: error }, 'Game sync error');
       return reply.status(500).send({ error: 'Game sync failed' });
     }
   });
@@ -135,7 +136,8 @@ export async function casinoRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: 'Game not found' });
     }
 
-    const walletResult = await fastify.db.query('SELECT currency FROM wallets WHERE user_id = $1', [request.user.userId]);
+    const sessionUser = getUser(request);
+    const walletResult = await fastify.db.query('SELECT currency FROM wallets WHERE user_id = $1', [sessionUser.userId]);
     const currency = walletResult.rows[0]?.currency || 'ILS';
 
     try {
@@ -151,7 +153,7 @@ export async function casinoRoutes(fastify: FastifyInstance) {
         },
         body: JSON.stringify({
           game_id,
-          player_id: request.user.userId,
+          player_id: sessionUser.userId,
           currency,
           return_url: process.env.FRONTEND_URL || 'http://localhost:3000',
           ip_address: request.ip,
@@ -161,14 +163,14 @@ export async function casinoRoutes(fastify: FastifyInstance) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        fastify.log.error(`Game session start failed: ${response.status} ${errorText}`);
+        fastify.log.error('Game session start failed: %d %s', response.status, errorText);
         return reply.status(502).send({ error: 'Failed to start game session' });
       }
 
       const data = await response.json() as { iframe_url?: string; url?: string };
       return reply.send({ iframe_url: data.iframe_url || data.url });
     } catch (error) {
-      fastify.log.error('Game session error:', error);
+      fastify.log.error({ err: error }, 'Game session error');
       return reply.status(500).send({ error: 'Failed to start game session' });
     }
   });

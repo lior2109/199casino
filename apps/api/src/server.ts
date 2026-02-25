@@ -42,27 +42,31 @@ async function start() {
   await fastify.register(dbPlugin);
   await fastify.register(redisPlugin);
 
-  fastify.setErrorHandler((error, request, reply) => {
-    if (error.validation) {
+  fastify.setErrorHandler((error, _request, reply) => {
+    const err = error as { validation?: unknown; name?: string; message?: string; statusCode?: number };
+
+    if (err.validation) {
       return reply.status(400).send({
         error: 'Validation Error',
-        message: error.message,
-        details: error.validation,
+        message: err.message,
+        details: err.validation,
       });
     }
 
-    if (error.name === 'ZodError') {
+    if (err.name === 'ZodError') {
+      let details: unknown;
+      try { details = JSON.parse(err.message || '[]'); } catch { details = err.message; }
       return reply.status(400).send({
         error: 'Validation Error',
         message: 'Invalid input',
-        details: JSON.parse(error.message),
+        details,
       });
     }
 
-    fastify.log.error(error);
-    return reply.status(error.statusCode || 500).send({
+    fastify.log.error({ err: error }, 'Request error');
+    return reply.status(err.statusCode || 500).send({
       error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
     });
   });
 

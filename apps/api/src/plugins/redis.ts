@@ -18,7 +18,7 @@ async function redisPlugin(fastify: FastifyInstance) {
   });
 
   redis.on('error', (err) => {
-    fastify.log.error('Redis error', err);
+    fastify.log.error({ err }, 'Redis error');
   });
 
   redis.on('connect', () => {

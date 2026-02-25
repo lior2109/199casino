@@ -1,19 +1,35 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { JwtPayload, UserRole } from '@betpro/shared';
+import type { UserRole } from '@betpro/shared';
 
-declare module 'fastify' {
-  interface FastifyRequest {
-    user: JwtPayload;
-    tenantId: string;
-  }
+export interface RequestUser {
+  userId: string;
+  tenantId: string;
+  role: UserRole;
+  username: string;
+}
+
+export function getUser(request: FastifyRequest): RequestUser {
+  return (request as unknown as { betproUser: RequestUser }).betproUser;
+}
+
+function setUser(request: FastifyRequest, user: RequestUser) {
+  (request as unknown as { betproUser: RequestUser }).betproUser = user;
+}
+
+export function getTenantId(request: FastifyRequest): string {
+  return (request as unknown as { betproTenantId: string }).betproTenantId;
+}
+
+function setTenantId(request: FastifyRequest, tenantId: string) {
+  (request as unknown as { betproTenantId: string }).betproTenantId = tenantId;
 }
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const decoded = await request.jwtVerify<JwtPayload>();
-    request.user = decoded;
-    request.tenantId = decoded.tenantId;
-  } catch (err) {
+    const decoded = await request.jwtVerify() as unknown as RequestUser;
+    setUser(request, decoded);
+    setTenantId(request, decoded.tenantId);
+  } catch (_err) {
     reply.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' });
   }
 }
@@ -23,7 +39,8 @@ export function requireRole(...roles: UserRole[]) {
     await authenticate(request, reply);
     if (reply.sent) return;
 
-    if (!roles.includes(request.user.role)) {
+    const user = getUser(request);
+    if (!roles.includes(user.role)) {
       reply.status(403).send({ error: 'Forbidden', message: 'Insufficient permissions' });
     }
   };
@@ -38,7 +55,7 @@ export function tenantMiddleware(fastify: FastifyInstance) {
         [tenantSlug]
       );
       if (result.rows.length > 0) {
-        request.tenantId = result.rows[0].id;
+        setTenantId(request, result.rows[0].id);
       }
     }
   });

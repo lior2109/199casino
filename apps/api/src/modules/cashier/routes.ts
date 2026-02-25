@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { randomInt } from 'crypto';
-import { authenticate, requireRole } from '../../middleware/auth.js';
+import { authenticate, requireRole, getUser } from '../../middleware/auth.js';
 
 const ADJECTIVES = ['GOLD', 'LUCKY', 'ROYAL', 'PRIME', 'MEGA', 'SUPER', 'STAR', 'CASH', 'BONUS', 'ELITE'];
 
@@ -39,17 +39,18 @@ export async function cashierRoutes(fastify: FastifyInstance) {
     const pin = generatePin();
     const expiresAt = new Date(Date.now() + body.expires_in_hours * 60 * 60 * 1000);
 
+    const reqUser = getUser(request);
     const result = await fastify.db.query(
       `INSERT INTO vouchers (tenant_id, cashier_id, code, pin, amount, currency, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, code, pin, amount, currency, status, expires_at, created_at`,
-      [request.user.tenantId, request.user.userId, code, pin, body.amount, body.currency, expiresAt]
+      [reqUser.tenantId, reqUser.userId, code, pin, body.amount, body.currency, expiresAt]
     );
 
     await fastify.db.query(
       `INSERT INTO audit_log (user_id, action, entity_type, entity_id, ip_address, metadata)
        VALUES ($1, 'voucher_created', 'voucher', $2, $3, $4)`,
-      [request.user.userId, result.rows[0].id, request.ip, JSON.stringify({ amount: body.amount, currency: body.currency })]
+      [reqUser.userId, result.rows[0].id, request.ip, JSON.stringify({ amount: body.amount, currency: body.currency })]
     );
 
     return reply.status(201).send({ voucher: result.rows[0] });
@@ -88,9 +89,10 @@ export async function cashierRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Voucher has expired' });
       }
 
+      const redeemUser = getUser(request);
       const walletResult = await client.query(
         'SELECT real_balance FROM wallets WHERE user_id = $1 FOR UPDATE',
-        [request.user.userId]
+        [redeemUser.userId]
       );
 
       if (walletResult.rows.length === 0) {
@@ -104,19 +106,19 @@ export async function cashierRoutes(fastify: FastifyInstance) {
 
       await client.query(
         'UPDATE wallets SET real_balance = $1, updated_at = NOW() WHERE user_id = $2',
-        [balanceAfter.toFixed(2), request.user.userId]
+        [balanceAfter.toFixed(2), redeemUser.userId]
       );
 
       await client.query(
         `UPDATE vouchers SET status = 'redeemed', redeemed_by = $1, redeemed_at = NOW() WHERE id = $2`,
-        [request.user.userId, voucher.id]
+        [redeemUser.userId, voucher.id]
       );
 
       await client.query(
         `INSERT INTO transactions (user_id, type, amount, currency, balance_before, balance_after, reference_id, metadata)
          VALUES ($1, 'voucher_redeem', $2, $3, $4, $5, $6, $7)`,
         [
-          request.user.userId, amount.toFixed(2), voucher.currency,
+          redeemUser.userId, amount.toFixed(2), voucher.currency,
           balanceBefore.toFixed(2), balanceAfter.toFixed(2),
           voucher.code, JSON.stringify({ voucher_id: voucher.id }),
         ]
@@ -142,8 +144,9 @@ export async function cashierRoutes(fastify: FastifyInstance) {
     const { status, page = '1', per_page = '20' } = request.query as Record<string, string>;
     const offset = (parseInt(page) - 1) * parseInt(per_page);
 
+    const listUser = getUser(request);
     let query = 'SELECT * FROM vouchers WHERE cashier_id = $1';
-    const params: (string | number)[] = [request.user.userId];
+    const params: (string | number)[] = [listUser.userId];
 
     if (status) {
       query += ' AND status = $2';

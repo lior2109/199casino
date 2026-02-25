@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, getUser } from '../../middleware/auth.js';
 
 export async function walletRoutes(fastify: FastifyInstance) {
   fastify.get('/balance', { preHandler: [authenticate] }, async (request, reply) => {
     const result = await fastify.db.query(
       'SELECT real_balance, bonus_balance, locked_balance, currency FROM wallets WHERE user_id = $1',
-      [request.user.userId]
+      [getUser(request).userId]
     );
 
     if (result.rows.length === 0) {
@@ -27,7 +27,7 @@ export async function walletRoutes(fastify: FastifyInstance) {
     const offset = (parseInt(page) - 1) * parseInt(per_page);
 
     let query = 'SELECT * FROM transactions WHERE user_id = $1';
-    const params: (string | number)[] = [request.user.userId];
+    const params: (string | number)[] = [getUser(request).userId];
 
     if (type) {
       query += ' AND type = $2';
@@ -41,7 +41,7 @@ export async function walletRoutes(fastify: FastifyInstance) {
 
     const countResult = await fastify.db.query(
       'SELECT COUNT(*) FROM transactions WHERE user_id = $1',
-      [request.user.userId]
+      [getUser(request).userId]
     );
 
     return reply.send({

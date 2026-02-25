@@ -245,7 +245,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       }
     } catch (error) {
       await client.query('ROLLBACK');
-      fastify.log.error('Webhook processing error:', error);
+      fastify.log.error({ err: error }, 'Webhook processing error');
       return reply.status(500).send({ error: 'Internal server error' });
     } finally {
       client.release();

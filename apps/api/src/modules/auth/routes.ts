@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import bcryptjs from 'bcryptjs';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, getUser } from '../../middleware/auth.js';
 
 const registerSchema = z.object({
   username: z.string().min(3).max(50),
@@ -135,7 +135,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const decoded = fastify.jwt.verify<{ userId: string; tenantId: string; role: string; username: string; type: string }>(refresh_token);
+      const decoded = fastify.jwt.verify(refresh_token) as unknown as { userId: string; tenantId: string; role: string; username: string; type: string };
       if (decoded.type !== 'refresh') {
         return reply.status(401).send({ error: 'Invalid token type' });
       }
@@ -162,7 +162,7 @@ export async function authRoutes(fastify: FastifyInstance) {
        FROM users u
        LEFT JOIN wallets w ON w.user_id = u.id
        WHERE u.id = $1`,
-      [request.user.userId]
+      [getUser(request).userId]
     );
 
     if (result.rows.length === 0) {

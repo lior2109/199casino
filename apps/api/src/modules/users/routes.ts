@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { requireRole } from '../../middleware/auth.js';
+import { requireRole, getUser } from '../../middleware/auth.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/', { preHandler: [requireRole('admin', 'superadmin')] }, async (request, reply) => {
@@ -12,7 +12,7 @@ export async function userRoutes(fastify: FastifyInstance) {
       FROM users u
       LEFT JOIN wallets w ON w.user_id = u.id
       WHERE u.tenant_id = $1`;
-    const params: (string | number)[] = [request.user.tenantId];
+    const params: (string | number)[] = [getUser(request).tenantId];
 
     if (search) {
       query += ` AND (u.username ILIKE $2 OR u.email ILIKE $2 OR u.first_name ILIKE $2)`;

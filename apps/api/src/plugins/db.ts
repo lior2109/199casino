@@ -17,7 +17,7 @@ async function dbPlugin(fastify: FastifyInstance) {
   });
 
   pool.on('error', (err) => {
-    fastify.log.error('Unexpected PostgreSQL pool error', err);
+    fastify.log.error({ err }, 'Unexpected PostgreSQL pool error');
   });
 
   await pool.query('SELECT 1');
